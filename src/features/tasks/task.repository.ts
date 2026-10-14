@@ -55,7 +55,7 @@ export class TaskRepository {
     // Due today filter
     if (filter.dueTodayOnly) {
       const today = toDateOnlyString();
-      conditions.push("due_at IS NOT NULL AND due_at LIKE ?");
+      conditions.push('due_at IS NOT NULL AND due_at LIKE ?');
       params.push(`${today}%`);
     }
 
@@ -71,7 +71,6 @@ export class TaskRepository {
     // Sort order
     let sortColumn = 'created_at';
     if (sort.field === 'due_at') {
-      // Put null due dates last
       sortColumn = 'CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at';
     } else if (sort.field === 'priority') {
       sortColumn = `CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
@@ -115,7 +114,7 @@ export class TaskRepository {
       notification_id: null,
     };
 
-    return await db.withTransactionAsync(async () => {
+    await db.withTransactionAsync(async () => {
       await db.runAsync(
         `INSERT INTO tasks (
           id, title, description, priority, category, status,
@@ -144,9 +143,9 @@ export class TaskRepository {
         snapshot_json: JSON.stringify(task),
         occurred_at: now,
       });
-
-      return task;
     });
+
+    return task;
   }
 
   /**
@@ -157,9 +156,11 @@ export class TaskRepository {
     id: string,
     updates: UpdateTaskInput
   ): Promise<Task | null> {
-    return await db.withTransactionAsync(async () => {
+    let updatedResult: Task | null = null;
+
+    await db.withTransactionAsync(async () => {
       const existing = await this.getById(db, id);
-      if (!existing) return null;
+      if (!existing) return;
 
       const now = toIsoString();
       const changes: string[] = [];
@@ -234,17 +235,21 @@ export class TaskRepository {
         });
       }
 
-      return updatedTask;
+      updatedResult = updatedTask;
     });
+
+    return updatedResult;
   }
 
   /**
    * Marks a task as complete and logs a 'completed' event in a transaction.
    */
   static async complete(db: SQLiteDatabase, id: string): Promise<Task | null> {
-    return await db.withTransactionAsync(async () => {
+    let completedResult: Task | null = null;
+
+    await db.withTransactionAsync(async () => {
       const existing = await this.getById(db, id);
-      if (!existing) return null;
+      if (!existing) return;
 
       const now = toIsoString();
       await db.runAsync(
@@ -266,22 +271,26 @@ export class TaskRepository {
         occurred_at: now,
       });
 
-      return {
+      completedResult = {
         ...existing,
         status: 'completed',
         completed_at: now,
         updated_at: now,
       };
     });
+
+    return completedResult;
   }
 
   /**
    * Reopens a completed task and logs a 'reopened' event in a transaction.
    */
   static async reopen(db: SQLiteDatabase, id: string): Promise<Task | null> {
-    return await db.withTransactionAsync(async () => {
+    let reopenedResult: Task | null = null;
+
+    await db.withTransactionAsync(async () => {
       const existing = await this.getById(db, id);
-      if (!existing) return null;
+      if (!existing) return;
 
       const now = toIsoString();
       await db.runAsync(
@@ -302,22 +311,26 @@ export class TaskRepository {
         occurred_at: now,
       });
 
-      return {
+      reopenedResult = {
         ...existing,
         status: 'pending',
         completed_at: null,
         updated_at: now,
       };
     });
+
+    return reopenedResult;
   }
 
   /**
    * Soft-deletes a task and logs a 'deleted' event in a transaction.
    */
   static async delete(db: SQLiteDatabase, id: string): Promise<boolean> {
-    return await db.withTransactionAsync(async () => {
+    let deletedSuccess = false;
+
+    await db.withTransactionAsync(async () => {
       const existing = await this.getById(db, id);
-      if (!existing) return false;
+      if (!existing) return;
 
       const now = toIsoString();
       await db.runAsync(
@@ -338,17 +351,21 @@ export class TaskRepository {
         occurred_at: now,
       });
 
-      return true;
+      deletedSuccess = true;
     });
+
+    return deletedSuccess;
   }
 
   /**
    * Restores a soft-deleted task.
    */
   static async restore(db: SQLiteDatabase, id: string): Promise<boolean> {
-    return await db.withTransactionAsync(async () => {
+    let restoredSuccess = false;
+
+    await db.withTransactionAsync(async () => {
       const existing = await this.getById(db, id);
-      if (!existing) return false;
+      if (!existing) return;
 
       const now = toIsoString();
       await db.runAsync(
@@ -368,7 +385,9 @@ export class TaskRepository {
         occurred_at: now,
       });
 
-      return true;
+      restoredSuccess = true;
     });
+
+    return restoredSuccess;
   }
 }
