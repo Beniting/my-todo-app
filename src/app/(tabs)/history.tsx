@@ -11,7 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTodo } from '@/context/TodoContext';
-import { HistoryAction, TaskHistoryEntry } from '@/features/history/history.types';
+import { HistoryAction } from '@/features/history/history.types';
 import { EmptyState } from '@/components/EmptyState';
 import { formatDisplayDate, formatRelativeTime } from '@/utils/date';
 

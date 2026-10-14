@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,81 +12,48 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTodo } from '@/context/TodoContext';
 import { toIsoString } from '@/utils/date';
+import { ReminderService } from '@/features/reminders/reminder.service';
 
 export default function SettingsScreen() {
   const isDark = useColorScheme() === 'dark';
-  const { db, stats, timeline, refreshTasks, refreshStats, refreshTimeline, createTask } =
-    useTodo();
+  const { db, stats, timeline, refreshTasks, refreshStats, refreshTimeline } = useTodo();
 
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [pushToken, setPushToken] = useState<string | null>(null);
 
-  const handleSeedData = async () => {
-    Alert.alert(
-      'Seed Sample Tasks',
-      'This will insert a set of demo tasks with different priorities, categories, and due dates. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Seed Tasks',
-          onPress: async () => {
-            const today = new Date();
-            const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1);
+  useEffect(() => {
+    // Automatically register and enable push notifications for the final build
+    (async () => {
+      const token = await ReminderService.registerForPushNotificationsAsync();
+      if (token) {
+        setPushToken(token);
+        setNotificationsEnabled(true);
+      }
+    })();
+  }, []);
 
-            const sampleTasks = [
-              {
-                title: 'Design app icon and brand assets',
-                description: 'Review guidelines for Android adaptive icons and vector badges.',
-                priority: 'high' as const,
-                category: 'Work',
-                due_at: toIsoString(today),
-              },
-              {
-                title: 'Review weekly sprint goals and PRs',
-                description: 'Check team backlog, merge bugfix branches, and update Jira tickets.',
-                priority: 'medium' as const,
-                category: 'Work',
-                due_at: toIsoString(tomorrow),
-              },
-              {
-                title: 'Buy fresh vegetables and groceries',
-                description: 'Spinach, broccoli, olive oil, almonds, and Greek yogurt.',
-                priority: 'low' as const,
-                category: 'Shopping',
-                due_at: toIsoString(today),
-              },
-              {
-                title: 'Complete 30-minute cardio workout',
-                description: 'Outdoor jog or 5km run followed by stretching.',
-                priority: 'medium' as const,
-                category: 'Health',
-                due_at: toIsoString(today),
-              },
-              {
-                title: 'Study React Native & SQLite performance',
-                description: 'Read up on WAL mode, index optimization, and memory bounds.',
-                priority: 'high' as const,
-                category: 'Study',
-                due_at: toIsoString(tomorrow),
-              },
-            ];
-
-            for (const item of sampleTasks) {
-              await createTask(item);
-            }
-
-            Alert.alert('Success', '5 demo tasks created with audit history logs!');
-          },
-        },
-      ]
-    );
+  const handleToggleNotifications = async (val: boolean) => {
+    if (val) {
+      const token = await ReminderService.registerForPushNotificationsAsync();
+      const granted = await ReminderService.requestPermissions();
+      setNotificationsEnabled(granted);
+      if (token) setPushToken(token);
+      if (!granted) {
+        Alert.alert(
+          'Notifications Required',
+          'Please enable notification permissions in your device settings to receive task alarms.'
+        );
+      }
+    } else {
+      setNotificationsEnabled(false);
+    }
   };
 
   const handleClearCompleted = async () => {
     if (!db) return;
     Alert.alert(
       'Clear Completed Tasks',
-      'This will soft-delete all completed tasks and create deletion logs. Proceed?',
+      'This will archive and delete all completed tasks. Audit history will record this action. Proceed?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -98,7 +65,7 @@ export default function SettingsScreen() {
               toIsoString()
             );
             await Promise.all([refreshTasks(), refreshStats(), refreshTimeline()]);
-            Alert.alert('Done', 'Completed tasks moved to trash.');
+            Alert.alert('Done', 'Completed tasks successfully cleared.');
           },
         },
       ]
@@ -129,8 +96,8 @@ export default function SettingsScreen() {
             <Text style={[styles.appName, { color: isDark ? '#FFFFFF' : '#111827' }]}>
               My To-Do
             </Text>
-            <Text style={{ fontSize: 13, color: isDark ? '#9CA3AF' : '#6B7280' }}>
-              Version 1.0.0 • Offline-First Task Manager
+            <Text style={{ fontSize: 13, color: isDark ? '#9CA3AF' : '#6B7280', marginTop: 2 }}>
+              Version 1.0.0
             </Text>
           </View>
         </View>
@@ -139,19 +106,19 @@ export default function SettingsScreen() {
 
         <View style={styles.statRow}>
           <Text style={[styles.statLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
-            Local Database Engine
+            Total Stored Tasks
           </Text>
           <Text style={[styles.statValue, { color: isDark ? '#FFFFFF' : '#111827' }]}>
-            SQLite (expo-sqlite 57)
+            {stats?.totalTasks ?? 0}
           </Text>
         </View>
 
         <View style={styles.statRow}>
           <Text style={[styles.statLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
-            Total Stored Tasks
+            Completed Tasks
           </Text>
-          <Text style={[styles.statValue, { color: isDark ? '#FFFFFF' : '#111827' }]}>
-            {stats?.totalTasks ?? 0}
+          <Text style={[styles.statValue, { color: '#10B981' }]}>
+            {stats?.completedTasks ?? 0}
           </Text>
         </View>
 
@@ -178,25 +145,37 @@ export default function SettingsScreen() {
           },
         ]}>
         <View style={styles.switchRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.switchTitle, { color: isDark ? '#FFFFFF' : '#111827' }]}>
-              Task Reminders
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[styles.switchTitle, { color: isDark ? '#FFFFFF' : '#111827' }]}>
+                Push & Task Notifications
+              </Text>
+              {notificationsEnabled && (
+                <View style={styles.activeBadge}>
+                  <Text style={styles.activeBadgeText}>ACTIVE</Text>
+                </View>
+              )}
+            </View>
+            <Text style={{ fontSize: 12, color: isDark ? '#9CA3AF' : '#6B7280', marginTop: 4 }}>
+              Alerts at task start time and 15 mins before due deadline
             </Text>
-            <Text style={{ fontSize: 12, color: isDark ? '#9CA3AF' : '#6B7280' }}>
-              Allow local notifications for scheduled deadlines
-            </Text>
+            {Boolean(pushToken) && (
+              <Text style={{ fontSize: 11, color: '#10B981', marginTop: 3 }}>
+                ✓ Native push service registered
+              </Text>
+            )}
           </View>
           <Switch
             value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
+            onValueChange={handleToggleNotifications}
             trackColor={{ false: '#767577', true: '#2563EB' }}
           />
         </View>
       </View>
 
-      {/* Data Management Section */}
+      {/* Data Management Section (changed from Data & Testing) */}
       <Text style={[styles.sectionTitle, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
-        Data & Testing
+        Data Management
       </Text>
       <View
         style={[
@@ -208,40 +187,24 @@ export default function SettingsScreen() {
         ]}>
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={handleSeedData}
-          style={styles.actionItem}>
-          <Ionicons name="sparkles-outline" size={20} color="#2563EB" />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.actionTitle, { color: isDark ? '#FFFFFF' : '#111827' }]}>
-              Seed Sample Demo Tasks
-            </Text>
-            <Text style={{ fontSize: 12, color: isDark ? '#9CA3AF' : '#6B7280' }}>
-              Populates realistic tasks and history for instant testing
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <TouchableOpacity
-          activeOpacity={0.7}
           onPress={handleClearCompleted}
           style={styles.actionItem}>
-          <Ionicons name="trash-bin-outline" size={20} color="#EF4444" />
+          <View style={[styles.actionIconWrap, { backgroundColor: '#FEE2E2' }]}>
+            <Ionicons name="trash-bin-outline" size={18} color="#EF4444" />
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.actionTitle, { color: '#EF4444' }]}>
               Clear Completed Tasks
             </Text>
-            <Text style={{ fontSize: 12, color: isDark ? '#9CA3AF' : '#6B7280' }}>
-              Move all completed tasks to archive/trash
+            <Text style={{ fontSize: 12, color: isDark ? '#9CA3AF' : '#6B7280', marginTop: 2 }}>
+              Archive and remove all finished tasks from the active list
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
         </TouchableOpacity>
       </View>
 
-      {/* Privacy Notice */}
+      {/* Security & Privacy Notice */}
       <View
         style={[
           styles.privacyBox,
@@ -253,14 +216,14 @@ export default function SettingsScreen() {
         <Ionicons name="shield-checkmark-outline" size={24} color="#2563EB" />
         <View style={{ flex: 1 }}>
           <Text style={[styles.privacyTitle, { color: isDark ? '#93C5FD' : '#1E40AF' }]}>
-            100% Offline & Private
+            Private & Secure
           </Text>
           <Text
             style={[
               styles.privacyBody,
               { color: isDark ? '#BFDBFE' : '#1E3A8A' },
             ]}>
-            All tasks, descriptions, and audit history logs are stored strictly on your device inside SQLite. No data is transmitted to external servers.
+            All your tasks, planned time periods, and activity history are stored securely on your device. Scheduled notifications alert you on time without transmitting your data.
           </Text>
         </View>
       </View>
@@ -331,13 +294,30 @@ const styles = StyleSheet.create({
   },
   switchTitle: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  activeBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  activeBadgeText: {
+    color: '#16A34A',
+    fontSize: 10,
+    fontWeight: '800',
   },
   actionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 4,
+  },
+  actionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionTitle: {
     fontSize: 15,
@@ -345,11 +325,11 @@ const styles = StyleSheet.create({
   },
   privacyBox: {
     flexDirection: 'row',
-    padding: 16,
-    borderRadius: 16,
+    padding: 14,
+    borderRadius: 14,
     borderWidth: 1,
     gap: 12,
-    marginTop: 8,
+    alignItems: 'flex-start',
   },
   privacyTitle: {
     fontSize: 14,
@@ -358,6 +338,6 @@ const styles = StyleSheet.create({
   },
   privacyBody: {
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
   },
 });

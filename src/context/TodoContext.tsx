@@ -114,11 +114,28 @@ export function TodoProvider({ children }: { children: React.ReactNode }) {
 
   // Sync tasks and stats whenever DB, filter, or sort changes
   useEffect(() => {
-    if (db) {
-      refreshTasks();
-      refreshStats();
-    }
-  }, [db, refreshTasks, refreshStats]);
+    if (!db) return;
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const [taskList, statsData] = await Promise.all([
+          TaskRepository.getTasks(db, filter, sort),
+          StatisticsService.getDashboardStats(db),
+        ]);
+        if (isMounted) {
+          setTasks(taskList);
+          setStats(statsData);
+        }
+      } catch (err) {
+        console.error('Failed to sync tasks/stats:', err);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [db, filter, sort]);
 
   const createTask = async (input: CreateTaskInput): Promise<Task> => {
     if (!db) throw new Error('Database not ready');

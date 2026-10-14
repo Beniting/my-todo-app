@@ -27,10 +27,25 @@ export function validateTaskInput(input: CreateTaskInput | UpdateTaskInput): Val
     }
   }
 
+  if (input.start_at) {
+    const startDate = new Date(input.start_at);
+    if (isNaN(startDate.getTime())) {
+      errors.start_at = 'Invalid start time format.';
+    }
+  }
+
   if (input.due_at) {
     const dueDate = new Date(input.due_at);
     if (isNaN(dueDate.getTime())) {
       errors.due_at = 'Invalid due date format.';
+    }
+  }
+
+  if (input.start_at && input.due_at) {
+    const start = new Date(input.start_at).getTime();
+    const due = new Date(input.due_at).getTime();
+    if (!isNaN(start) && !isNaN(due) && due < start) {
+      errors.due_at = 'Due time must be after start time.';
     }
   }
 

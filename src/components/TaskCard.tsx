@@ -11,7 +11,12 @@ import { useRouter } from 'expo-router';
 import { Task } from '@/features/tasks/task.types';
 import { PriorityBadge } from './PriorityBadge';
 import { CategoryBadge } from './CategoryBadge';
-import { formatDisplayDate, isOverdue } from '@/utils/date';
+import {
+  formatDisplayDate,
+  formatTimeRange,
+  isCurrentlyActive,
+  isOverdue,
+} from '@/utils/date';
 
 interface TaskCardProps {
   task: Task;
@@ -24,6 +29,9 @@ export function TaskCard({ task, onToggle, onDelete }: TaskCardProps) {
   const isDark = useColorScheme() === 'dark';
   const completed = task.status === 'completed';
   const overdue = isOverdue(task.due_at, task.status);
+  const activeNow = !completed && isCurrentlyActive(task.start_at, task.due_at);
+  const timeRange = formatTimeRange(task.start_at, task.due_at);
+  const hasReminders = Boolean(task.start_notification_id || task.due_notification_id);
 
   return (
     <TouchableOpacity
@@ -32,7 +40,11 @@ export function TaskCard({ task, onToggle, onDelete }: TaskCardProps) {
         styles.card,
         {
           backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
-          borderColor: isDark ? '#2C2C2E' : '#E5E7EB',
+          borderColor: activeNow
+            ? '#2563EB'
+            : isDark
+            ? '#2C2C2E'
+            : '#E5E7EB',
           opacity: completed ? 0.75 : 1,
         },
       ]}
@@ -81,6 +93,46 @@ export function TaskCard({ task, onToggle, onDelete }: TaskCardProps) {
           </Text>
         ) : null}
 
+        {/* Time Period Slot Badge */}
+        {timeRange ? (
+          <View
+            style={[
+              styles.timeSlotBadge,
+              activeNow && styles.timeSlotBadgeActive,
+              {
+                backgroundColor: activeNow
+                  ? '#EFF6FF'
+                  : isDark
+                  ? '#2C2C2E'
+                  : '#F8FAFC',
+              },
+            ]}>
+            <Ionicons
+              name={activeNow ? 'radio-button-on' : 'time-outline'}
+              size={12}
+              color={activeNow ? '#2563EB' : isDark ? '#9CA3AF' : '#64748B'}
+            />
+            <Text
+              style={[
+                styles.timeSlotText,
+                {
+                  color: activeNow
+                    ? '#2563EB'
+                    : isDark
+                    ? '#D1D5DB'
+                    : '#475569',
+                  fontWeight: activeNow ? '700' : '500',
+                },
+              ]}>
+              {activeNow ? 'Active Now • ' : ''}
+              {timeRange}
+            </Text>
+            {hasReminders && !completed && (
+              <Ionicons name="notifications" size={11} color="#2563EB" />
+            )}
+          </View>
+        ) : null}
+
         {/* Footer badges & due date */}
         <View style={styles.footerRow}>
           <PriorityBadge priority={task.priority} size="small" />
@@ -92,16 +144,17 @@ export function TaskCard({ task, onToggle, onDelete }: TaskCardProps) {
               style={[
                 styles.dateBadge,
                 overdue && styles.dateBadgeOverdue,
+                { backgroundColor: overdue ? '#FEE2E2' : isDark ? '#2C2C2E' : '#F3F4F6' },
               ]}>
               <Ionicons
                 name={overdue ? 'alert-circle' : 'calendar-outline'}
                 size={12}
-                color={overdue ? '#DC2626' : '#6B7280'}
+                color={overdue ? '#DC2626' : isDark ? '#9CA3AF' : '#6B7280'}
               />
               <Text
                 style={[
                   styles.dateText,
-                  { color: overdue ? '#DC2626' : '#6B7280' },
+                  { color: overdue ? '#DC2626' : isDark ? '#D1D5DB' : '#6B7280' },
                 ]}>
                 {overdue ? 'Overdue: ' : ''}
                 {formatDisplayDate(task.due_at)}
@@ -174,6 +227,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  timeSlotBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  timeSlotBadgeActive: {
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+  },
+  timeSlotText: {
+    fontSize: 11,
+  },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -188,7 +257,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
-    backgroundColor: '#F3F4F6',
   },
   dateBadgeOverdue: {
     backgroundColor: '#FEE2E2',

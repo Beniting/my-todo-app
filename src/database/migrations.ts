@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DATABASE_NAME = 'mytodo.db';
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * Executes SQLite migrations incrementally based on PRAGMA user_version
@@ -25,13 +25,16 @@ export async function migrateDb(db: SQLiteDatabase): Promise<void> {
           priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
           category TEXT,
           status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+          start_at TEXT,
           due_at TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           completed_at TEXT,
           deleted_at TEXT,
           reminder_at TEXT,
-          notification_id TEXT
+          notification_id TEXT,
+          start_notification_id TEXT,
+          due_notification_id TEXT
         );
       `);
 
@@ -57,6 +60,26 @@ export async function migrateDb(db: SQLiteDatabase): Promise<void> {
 
       // 4. Update user_version
       await db.execAsync('PRAGMA user_version = 1;');
+    });
+  }
+
+  // Migration 2: Add start_at and multi-notification tracking
+  if (currentVersion < 2) {
+    await db.withTransactionAsync(async () => {
+      const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(tasks);');
+      const columnNames = new Set(columns.map((c) => c.name));
+
+      if (!columnNames.has('start_at')) {
+        await db.execAsync('ALTER TABLE tasks ADD COLUMN start_at TEXT;');
+      }
+      if (!columnNames.has('start_notification_id')) {
+        await db.execAsync('ALTER TABLE tasks ADD COLUMN start_notification_id TEXT;');
+      }
+      if (!columnNames.has('due_notification_id')) {
+        await db.execAsync('ALTER TABLE tasks ADD COLUMN due_notification_id TEXT;');
+      }
+
+      await db.execAsync('PRAGMA user_version = 2;');
     });
   }
 }

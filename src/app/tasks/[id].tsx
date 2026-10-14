@@ -17,7 +17,16 @@ import { TaskHistoryEntry } from '@/features/history/history.types';
 import { PriorityBadge } from '@/components/PriorityBadge';
 import { CategoryBadge } from '@/components/CategoryBadge';
 import { LoadingState } from '@/components/LoadingState';
-import { formatDisplayDate, formatRelativeTime, isOverdue } from '@/utils/date';
+import { TimePeriodPicker } from '@/components/TimePeriodPicker';
+import {
+  formatDisplayDate,
+  formatRelativeTime,
+  formatTime,
+  formatTimeRange,
+  calculateDuration,
+  isCurrentlyActive,
+  isOverdue,
+} from '@/utils/date';
 
 export default function TaskDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,33 +44,51 @@ export default function TaskDetailsScreen() {
   const [editDescription, setEditDescription] = useState('');
   const [editPriority, setEditPriority] = useState<Priority>('medium');
   const [editCategory, setEditCategory] = useState<string>('General');
+  const [editStartAt, setEditStartAt] = useState<string | null>(null);
+  const [editDueAt, setEditDueAt] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    if (!id) return;
-    try {
-      setIsLoading(true);
-      const [taskData, historyData] = await Promise.all([
-        getTaskById(id),
-        getTaskHistory(id),
-      ]);
-      setTask(taskData);
-      setHistory(historyData);
-      if (taskData) {
-        setEditTitle(taskData.title);
-        setEditDescription(taskData.description || '');
-        setEditPriority(taskData.priority);
-        setEditCategory(taskData.category || 'General');
-      }
-    } catch (err) {
-      console.error('Failed to load task details:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [id, getTaskById, getTaskHistory]);
+  const handlePeriodChange = useCallback(
+    ({ start_at, due_at }: { start_at: string | null; due_at: string | null }) => {
+      setEditStartAt(start_at);
+      setEditDueAt(due_at);
+    },
+    []
+  );
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    let isMounted = true;
+    (async () => {
+      if (!id) return;
+      try {
+        const [taskData, historyData] = await Promise.all([
+          getTaskById(id),
+          getTaskHistory(id),
+        ]);
+        if (isMounted) {
+          setTask(taskData);
+          setHistory(historyData);
+          if (taskData) {
+            setEditTitle(taskData.title);
+            setEditDescription(taskData.description || '');
+            setEditPriority(taskData.priority);
+            setEditCategory(taskData.category || 'General');
+            setEditStartAt(taskData.start_at);
+            setEditDueAt(taskData.due_at);
+          }
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error('Failed to load task details:', err);
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, getTaskById, getTaskHistory]);
 
   if (isLoading) {
     return <LoadingState message="Loading task details..." />;
@@ -85,6 +112,10 @@ export default function TaskDetailsScreen() {
 
   const completed = task.status === 'completed';
   const overdue = isOverdue(task.due_at, task.status);
+  const activeNow = !completed && isCurrentlyActive(task.start_at, task.due_at);
+  const timeRange = formatTimeRange(task.start_at, task.due_at);
+  const duration = calculateDuration(task.start_at, task.due_at);
+  const hasReminders = Boolean(task.start_notification_id || task.due_notification_id);
 
   const handleToggle = async () => {
     const updated = await toggleTask(task);
@@ -106,6 +137,8 @@ export default function TaskDetailsScreen() {
       description: editDescription.trim() || null,
       priority: editPriority,
       category: editCategory,
+      start_at: editStartAt,
+      due_at: editDueAt,
     });
 
     if (updated) {
@@ -119,7 +152,7 @@ export default function TaskDetailsScreen() {
   const handleDelete = () => {
     Alert.alert(
       'Delete Task',
-      'Are you sure you want to delete this task? The action will be logged in history.',
+      'Are you sure you want to delete this task? Scheduled notifications will be cancelled and the action logged in history.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -160,7 +193,7 @@ export default function TaskDetailsScreen() {
           <View
             style={[
               styles.statusDot,
-              { backgroundColor: completed ? '#10B981' : '#F59E0B' },
+              { backgroundColor: completed ? '#10B981' : activeNow ? '#2563EB' : '#F59E0B' },
             ]}
           />
           <Text
@@ -168,7 +201,7 @@ export default function TaskDetailsScreen() {
               styles.statusText,
               { color: isDark ? '#FFFFFF' : '#111827' },
             ]}>
-            {completed ? 'Completed' : 'Pending'}
+            {completed ? 'Completed' : activeNow ? 'In Progress' : 'Pending'}
           </Text>
         </View>
 
@@ -267,6 +300,16 @@ export default function TaskDetailsScreen() {
               ]}
             />
 
+            {/* Time Period in Edit Mode */}
+            <Text style={[styles.inputLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+              Schedule Time Period
+            </Text>
+            <TimePeriodPicker
+              initialStartAt={editStartAt}
+              initialDueAt={editDueAt}
+              onChange={handlePeriodChange}
+            />
+
             <Text style={[styles.inputLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
               Priority
             </Text>
@@ -346,7 +389,7 @@ export default function TaskDetailsScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={{ gap: 12 }}>
+          <View style={{ gap: 14 }}>
             <Text
               style={[
                 styles.title,
@@ -364,6 +407,45 @@ export default function TaskDetailsScreen() {
                 ]}>
                 {task.description}
               </Text>
+            ) : null}
+
+            {/* Scheduled Time Period Banner */}
+            {timeRange ? (
+              <View
+                style={[
+                  styles.timeBanner,
+                  {
+                    backgroundColor: activeNow
+                      ? isDark
+                        ? '#1E3A8A'
+                        : '#EFF6FF'
+                      : isDark
+                      ? '#252629'
+                      : '#F8FAFC',
+                    borderColor: activeNow ? '#3B82F6' : isDark ? '#374151' : '#E2E8F0',
+                  },
+                ]}>
+                <View style={styles.timeBannerHeader}>
+                  <Ionicons name="time" size={18} color="#2563EB" />
+                  <Text style={[styles.timeBannerTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                    Planned Time Period: {timeRange}
+                  </Text>
+                  {duration ? <Text style={styles.durationPill}>({duration})</Text> : null}
+                </View>
+
+                {hasReminders && !completed && (
+                  <View style={styles.remindersInfoRow}>
+                    <Ionicons name="notifications" size={14} color="#2563EB" />
+                    <Text
+                      style={[
+                        styles.remindersInfoText,
+                        { color: isDark ? '#93C5FD' : '#1D4ED8' },
+                      ]}>
+                      Alerts at {formatTime(task.start_at)} and 15 mins before {formatTime(task.due_at)}
+                    </Text>
+                  </View>
+                )}
+              </View>
             ) : null}
 
             <View style={styles.metaRow}>
@@ -582,6 +664,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  timeBanner: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 6,
+  },
+  timeBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  timeBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  durationPill: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  remindersInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  remindersInfoText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
   metaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -616,7 +728,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   editSection: {
-    gap: 10,
+    gap: 12,
   },
   inputLabel: {
     fontSize: 12,

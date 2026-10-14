@@ -186,7 +186,7 @@ export default function DashboardScreen() {
               styles.sectionTitle,
               { color: isDark ? '#FFFFFF' : '#111827' },
             ]}>
-            Today's Focus ({todayTasks.length})
+            {"Today's Focus"} ({todayTasks.length})
           </Text>
           <TouchableOpacity onPress={() => router.push('/tasks')}>
             <Text style={styles.seeAllText}>View All Tasks</Text>

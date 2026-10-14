@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,17 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTodo } from '@/context/TodoContext';
 import { Priority, PRESET_CATEGORIES } from '@/features/tasks/task.types';
 import { validateTaskInput } from '@/features/tasks/task.validation';
-import { toDateOnlyString, toIsoString } from '@/utils/date';
+import { TimePeriodPicker } from '@/components/TimePeriodPicker';
 
 export default function NewTaskScreen() {
   const router = useRouter();
+  const searchParams = useLocalSearchParams<{ date?: string }>();
+  const initialDate = Array.isArray(searchParams.date) ? searchParams.date[0] : searchParams.date;
   const isDark = useColorScheme() === 'dark';
   const { createTask } = useTodo();
 
@@ -29,37 +31,21 @@ export default function NewTaskScreen() {
   const [category, setCategory] = useState<string>('General');
   const [customCategory, setCustomCategory] = useState('');
   const [showCustomCategory, setShowCustomCategory] = useState(false);
-  const [dueDateOption, setDueDateOption] = useState<'none' | 'today' | 'tomorrow' | 'nextWeek' | 'custom'>('today');
-  const [customDueDate, setCustomDueDate] = useState(toDateOnlyString());
+
+  // Time period state
+  const [startAt, setStartAt] = useState<string | null>(null);
+  const [dueAt, setDueAt] = useState<string | null>(null);
+
+  const handlePeriodChange = useCallback(
+    ({ start_at, due_at }: { start_at: string | null; due_at: string | null }) => {
+      setStartAt(start_at);
+      setDueAt(due_at);
+    },
+    []
+  );
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Compute ISO due_at string from selected option
-  const computeDueAt = (): string | null => {
-    const today = new Date();
-    if (dueDateOption === 'none') return null;
-    if (dueDateOption === 'today') {
-      today.setHours(23, 59, 59, 999);
-      return toIsoString(today);
-    }
-    if (dueDateOption === 'tomorrow') {
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(23, 59, 59, 999);
-      return toIsoString(tomorrow);
-    }
-    if (dueDateOption === 'nextWeek') {
-      const nextWeek = new Date(today);
-      nextWeek.setDate(nextWeek.getDate() + 7);
-      nextWeek.setHours(23, 59, 59, 999);
-      return toIsoString(nextWeek);
-    }
-    if (dueDateOption === 'custom') {
-      const customDate = new Date(`${customDueDate}T23:59:59.000Z`);
-      return isNaN(customDate.getTime()) ? null : toIsoString(customDate);
-    }
-    return null;
-  };
 
   const handleSave = async () => {
     if (isSubmitting) return;
@@ -68,14 +54,13 @@ export default function NewTaskScreen() {
       ? customCategory.trim() || 'General'
       : category;
 
-    const due_at = computeDueAt();
-
     const input = {
       title,
       description: description.trim() || null,
       priority,
       category: selectedCategory,
-      due_at,
+      start_at: startAt,
+      due_at: dueAt,
     };
 
     const validation = validateTaskInput(input);
@@ -153,7 +138,7 @@ export default function NewTaskScreen() {
             value={description}
             onChangeText={setDescription}
             multiline
-            numberOfLines={4}
+            numberOfLines={3}
             textAlignVertical="top"
             style={[
               styles.input,
@@ -164,6 +149,14 @@ export default function NewTaskScreen() {
                 color: isDark ? '#FFFFFF' : '#111827',
               },
             ]}
+          />
+        </View>
+
+        {/* Time Period Picker (Start time to End time + Notifications) */}
+        <View style={styles.formGroup}>
+          <TimePeriodPicker
+            initialDate={initialDate}
+            onChange={handlePeriodChange}
           />
         </View>
 
@@ -320,87 +313,6 @@ export default function NewTaskScreen() {
           )}
         </View>
 
-        {/* Due Date Options */}
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: isDark ? '#E5E7EB' : '#374151' }]}>
-            Due Date
-          </Text>
-          <View style={styles.pillsRow}>
-            {[
-              { id: 'today', label: 'Today' },
-              { id: 'tomorrow', label: 'Tomorrow' },
-              { id: 'nextWeek', label: 'Next Week' },
-              { id: 'none', label: 'No Due Date' },
-              { id: 'custom', label: 'Custom' },
-            ].map((opt) => {
-              const selected = dueDateOption === opt.id;
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  activeOpacity={0.8}
-                  onPress={() => setDueDateOption(opt.id as any)}
-                  style={[
-                    styles.pill,
-                    {
-                      backgroundColor: selected
-                        ? '#2563EB20'
-                        : isDark
-                        ? '#1C1C1E'
-                        : '#FFFFFF',
-                      borderColor: selected
-                        ? '#2563EB'
-                        : isDark
-                        ? '#2C2C2E'
-                        : '#E5E7EB',
-                    },
-                  ]}>
-                  <Text
-                    style={[
-                      styles.pillText,
-                      {
-                        color: selected
-                          ? '#2563EB'
-                          : isDark
-                          ? '#D1D5DB'
-                          : '#4B5563',
-                        fontWeight: selected ? '700' : '500',
-                      },
-                    ]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {dueDateOption === 'custom' && (
-            <View style={{ marginTop: 8 }}>
-              <TextInput
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={isDark ? '#6B7280' : '#9CA3AF'}
-                value={customDueDate}
-                onChangeText={setCustomDueDate}
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
-                    borderColor: isDark ? '#2C2C2E' : '#E5E7EB',
-                    color: isDark ? '#FFFFFF' : '#111827',
-                  },
-                ]}
-              />
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: isDark ? '#9CA3AF' : '#6B7280',
-                  marginTop: 4,
-                }}>
-                Format: YYYY-MM-DD
-              </Text>
-            </View>
-          )}
-        </View>
-
         {/* Buttons */}
         <View style={styles.buttonRow}>
           <TouchableOpacity
@@ -426,10 +338,7 @@ export default function NewTaskScreen() {
             activeOpacity={0.8}
             onPress={handleSave}
             disabled={isSubmitting}
-            style={[
-              styles.saveButton,
-              isSubmitting && { opacity: 0.6 },
-            ]}>
+            style={[styles.saveButton, isSubmitting && { opacity: 0.6 }]}>
             <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" />
             <Text style={styles.saveButtonText}>
               {isSubmitting ? 'Saving...' : 'Create Task'}
@@ -447,7 +356,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    gap: 18,
+    gap: 16,
   },
   formGroup: {
     gap: 8,
@@ -464,7 +373,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   textArea: {
-    height: 100,
+    height: 80,
   },
   errorText: {
     fontSize: 12,
@@ -496,7 +405,7 @@ const styles = StyleSheet.create({
   buttonRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 10,
+    marginTop: 8,
     marginBottom: 40,
   },
   cancelButton: {
